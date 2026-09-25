@@ -112,4 +112,26 @@ export const validateToken = async (req, res) => {
 };
 
 export const updateProfile = async (req, res) => {
-}
+  try {
+    const userId = req.user?.id || req.body.userId;
+    const { name } = req.body;
+
+    const user = await User.findById(userId).select('name email active isAdmin');
+
+    if (!user) {
+      return res.status(404).json({ error: 'Usuário não encontrado.' });
+    }
+
+    if (!user.active) {
+      return res.status(403).json({ error: 'Conta desativada.' });
+    }
+
+    user.name = name;
+    await user.save();
+
+    return res.status(200).json(user);
+  } catch (error) {
+    console.error('Erro no updateProfile:', error);
+    return res.status(500).json({ error: 'Erro interno do servidor.' });
+  }
+};

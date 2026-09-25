@@ -26,3 +26,10 @@ export const loginValidator = [
   body('password')
     .notEmpty().withMessage('Senha é obrigatória'),
 ];
+
+export const updateProfileValidator = [
+  body('name')
+    .trim()
+    .notEmpty().withMessage('Nome é obrigatório')
+    .isLength({ min: 3 }).withMessage('Nome deve ter pelo menos 3 caracteres'),
+];
