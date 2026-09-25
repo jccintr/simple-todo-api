@@ -1,7 +1,22 @@
 openapi: 3.0.3
 info:
-  title: Delivroo Express API
-  description: API de delivery — riders, stores, orders e admin
+  title: Simple Todo API
+  description: |
+    API REST para gerenciamento de tarefas (todos) organizadas por categorias.
+
+    ## Autenticação
+    Endpoints protegidos exigem header:
+    ```
+    Authorization: Bearer <token>
+    ```
+    O token é obtido em `POST /auth/login`.
+
+    ## Cadastro
+    Ao registrar um usuário, a API cria automaticamente três categorias padrão:
+    **Pessoal**, **Trabalho** e **Compras**.
+
+    ## Documentação interativa
+    Swagger UI disponível em `/api/docs`.
   version: 1.0.0
 
 servers:
@@ -9,768 +24,288 @@ servers:
     description: Desenvolvimento local
 
 tags:
-  - name: Riders
-    description: Autenticação e perfil dos entregadores
-  - name: Admin
-    description: Autenticação e gestão de administradores
-  - name: Stores
-    description: Autenticação e perfil das lojas
-  - name: Deliveries
-    description: Criação e listagem de entregas (loja e rider)
+  - name: Auth
+    description: Registro, login e validação de token
+  - name: Categories
+    description: CRUD de categorias do usuário autenticado
+  - name: Todos
+    description: CRUD de tarefas vinculadas a categorias
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          example: Mensagem de erro
+
+    ValidationError:
+      type: object
+      properties:
+        error:
+          type: string
+          example: Dados inválidos
+        details:
+          type: array
+          items:
+            type: object
+            properties:
+              field:
+                type: string
+                example: name
+              message:
+                type: string
+                example: Nome é obrigatório
+
+    MessageResponse:
+      type: object
+      properties:
+        message:
+          type: string
+
+    User:
+      type: object
+      properties:
+        _id:
+          type: string
+          example: 507f1f77bcf86cd799439011
+        name:
+          type: string
+          example: João Usuário
+        email:
+          type: string
+          format: email
+          example: joao@test.com
+        active:
+          type: boolean
+          example: true
+        isAdmin:
+          type: boolean
+          example: false
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    UserRegister:
+      type: object
+      required: [name, email, password]
+      properties:
+        name:
+          type: string
+          minLength: 3
+          example: João Usuário
+        email:
+          type: string
+          format: email
+          example: joao@test.com
+        password:
+          type: string
+          minLength: 3
+          example: "123456"
+
+    UserLogin:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+          example: joao@test.com
+        password:
+          type: string
+          example: "123456"
+
+    UserLoginResponse:
+      allOf:
+        - $ref: '#/components/schemas/User'
+        - type: object
+          properties:
+            token:
+              type: string
+              description: JWT para autenticação
+              example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+
+    Category:
+      type: object
+      properties:
+        _id:
+          type: string
+          example: 507f1f77bcf86cd799439012
+        user:
+          type: string
+          description: ID do usuário dono (presente no create/update; omitido no list)
+          example: 507f1f77bcf86cd799439011
+        name:
+          type: string
+          example: Pessoal
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CategoryListItem:
+      type: object
+      properties:
+        _id:
+          type: string
+        name:
+          type: string
+
+    CategoryInput:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          example: Estudos
+
+    Todo:
+      type: object
+      properties:
+        _id:
+          type: string
+          example: 507f1f77bcf86cd799439013
+        user:
+          type: string
+          example: 507f1f77bcf86cd799439011
+        category:
+          type: string
+          example: 507f1f77bcf86cd799439012
+        description:
+          type: string
+          example: Comprar pão
+        done:
+          type: boolean
+          example: false
+        priority:
+          type: string
+          enum: [low, medium, high]
+          example: medium
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    TodoCreate:
+      type: object
+      required: [description, categoryId]
+      properties:
+        description:
+          type: string
+          minLength: 3
+          example: Comprar pão
+        categoryId:
+          type: string
+          description: ObjectId da categoria
+          example: 507f1f77bcf86cd799439012
+        priority:
+          type: string
+          enum: [low, medium, high]
+          default: medium
+          example: high
+
+    TodoUpdate:
+      type: object
+      description: Todos os campos são opcionais (update parcial)
+      properties:
+        description:
+          type: string
+          minLength: 3
+          example: Enviar relatório
+        done:
+          type: boolean
+          example: true
+        priority:
+          type: string
+          enum: [low, medium, high]
+          example: high
+        categoryId:
+          type: string
+          description: ObjectId da nova categoria (deve pertencer ao usuário)
+          example: 507f1f77bcf86cd799439014
 
 paths:
   # =====================
-  # RIDERS
+  # AUTH
   # =====================
-  /riders/register:
+  /auth/register:
     post:
-      tags: [Riders]
-      summary: Cadastrar rider
+      tags: [Auth]
+      summary: Cadastrar usuário
+      description: |
+        Cria a conta e gera automaticamente as categorias padrão:
+        Pessoal, Trabalho e Compras.
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/RiderRegister'
-      responses:
-        '201':
-          description: Conta criada com sucesso
-        '400':
-          description: Dados inválidos ou email já cadastrado
-
-  /riders/login:
-    post:
-      tags: [Riders]
-      summary: Login do rider
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/RiderLogin'
-      responses:
-        '200':
-          description: Login realizado — retorna token JWT
-        '400':
-          description: Email ou senha inválidos
-        '403':
-          description: Conta desativada
-
-  /riders/me:
-    get:
-      tags: [Riders]
-      summary: Dados do rider autenticado
-      security:
-        - bearerAuth: []
-      responses:
-        '200':
-          description: Dados do rider
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RiderProfile'
-        '401':
-          description: Não autorizado
-        '403':
-          description: Conta desativada
-        '404':
-          description: Usuário não encontrado
-
-    patch:
-      tags: [Riders]
-      summary: Atualizar perfil do rider
-      description: |
-        Atualiza `name`, `phone` e/ou `doc` do rider autenticado.
-        Envie apenas os campos que deseja alterar.
-        Retorna o rider completo (mesmo formato do GET /riders/me).
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/RiderUpdateProfile'
-      responses:
-        '200':
-          description: Perfil atualizado com sucesso
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RiderProfile'
-        '401':
-          description: Não autorizado
-        '403':
-          description: Conta desativada
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                error: Conta desativada.
-        '404':
-          description: Rider não encontrado
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                error: Rider não encontrado.
-        '422':
-          description: Dados inválidos (validação)
-        '500':
-          description: Erro interno do servidor
-
-  /riders/me/avatar:
-    patch:
-      tags: [Riders]
-      summary: Atualizar avatar do rider
-      description: |
-        Envia uma imagem (JPEG, PNG ou WebP, máx. 2 MB) via multipart/form-data.
-        O arquivo é enviado ao Cloudinary (crop 400x400) e a URL é salva em `avatar`.
-        Campo do formulário: `avatar`.
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          multipart/form-data:
-            schema:
-              type: object
-              required: [avatar]
-              properties:
-                avatar:
-                  type: string
-                  format: binary
-                  description: Arquivo de imagem (jpeg, png ou webp)
-      responses:
-        '200':
-          description: Avatar atualizado com sucesso
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AvatarUploadResponse'
-        '400':
-          description: Nenhuma imagem enviada, tipo inválido ou arquivo muito grande
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              examples:
-                missing:
-                  value:
-                    error: Nenhuma imagem enviada.
-                tooLarge:
-                  value:
-                    error: Imagem muito grande. Máximo 2 MB.
-        '401':
-          description: Não autorizado
-        '404':
-          description: Rider não encontrado
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                error: Rider não encontrado.
-        '500':
-          description: Erro interno do servidor
-
-  /riders/me/document:
-    patch:
-      tags: [Riders]
-      summary: Enviar/atualizar documento do rider (CNH ou RG)
-      description: |
-        Envia uma imagem do documento (JPEG, PNG ou WebP, máx. 2 MB) via multipart/form-data.
-        O arquivo é enviado ao Cloudinary e a URL é salva em `documentImage`.
-        Campo do formulário: `document`.
-        Usado no fluxo de aprovação manual da conta.
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          multipart/form-data:
-            schema:
-              type: object
-              required: [document]
-              properties:
-                document:
-                  type: string
-                  format: binary
-                  description: Foto do documento (CNH ou RG)
-      responses:
-        '200':
-          description: Documento atualizado com sucesso
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/DocumentUploadResponse'
-        '400':
-          description: Nenhuma imagem enviada, tipo inválido ou arquivo muito grande
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              examples:
-                missing:
-                  value:
-                    error: Nenhuma imagem enviada.
-                tooLarge:
-                  value:
-                    error: Imagem muito grande. Máximo 2 MB.
-        '401':
-          description: Não autorizado
-        '404':
-          description: Rider não encontrado
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                error: Rider não encontrado.
-        '500':
-          description: Erro interno do servidor
-
-  /riders/me/vehicle:
-    patch:
-      tags: [Riders]
-      summary: Atualizar dados do veículo do rider
-      description: |
-        Atualiza `type`, `model`, `color` e/ou `plate` do veículo.
-        Campo no body: `vehicleType` (mapeado para `vehicle.type`).
-        Se o tipo for Bicicleta, a placa é limpa automaticamente.
-        Retorna o rider completo.
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/RiderUpdateVehicle'
-      responses:
-        '200':
-          description: Veículo atualizado com sucesso
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RiderProfile'
-        '401':
-          description: Não autorizado
-        '403':
-          description: Conta desativada
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                error: Conta desativada.
-        '404':
-          description: Rider não encontrado
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                error: Rider não encontrado.
-        '422':
-          description: Dados inválidos (validação)
-        '500':
-          description: Erro interno do servidor
-
-  /riders/me/status:
-    patch:
-      tags: [Riders]
-      summary: Alternar status online/offline do rider
-      description: |
-        Toggle do campo `online`. Sem body.
-        Requer conta ativa e e-mail verificado.
-        Retorna o rider completo.
-      security:
-        - bearerAuth: []
-      responses:
-        '200':
-          description: Status alternado com sucesso
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RiderProfile'
-        '401':
-          description: Não autorizado
-        '403':
-          description: Conta desativada ou não verificada
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              examples:
-                inactive:
-                  value:
-                    error: Conta desativada.
-                unverified:
-                  value:
-                    error: Conta não verificada.
-        '404':
-          description: Rider não encontrado
-        '500':
-          description: Erro interno do servidor
-
-  /riders/verify-account:
-    post:
-      tags: [Riders]
-      summary: Verificar conta do rider
-      description: |
-        Valida o código de verificação enviado por e-mail no cadastro.
-        Define `emailVerifiedAt` com a data/hora atual e limpa `emailVerificationCode`.
-        Requer autenticação (Bearer token).
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/RiderVerifyAccount'
-      responses:
-        '200':
-          description: Conta verificada com sucesso
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RiderProfile'
-        '400':
-          description: Conta já verificada
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                error: Conta já verificada.
-        '401':
-          description: Não autorizado
-        '403':
-          description: Código de verificação inválido
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                error: Código de verificação inválido.
-        '500':
-          description: Erro interno do servidor
-
-  /riders/password/request:
-    post:
-      tags: [Riders]
-      summary: Solicitar código de recuperação de senha
-      description: |
-        Se o e-mail estiver cadastrado e a conta ativa, gera um código,
-        define expiração (15 minutos) e envia por e-mail.
-        Sempre retorna a mesma mensagem genérica (não revela se o e-mail existe).
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/PasswordRequest'
-      responses:
-        '200':
-          description: Resposta genérica (enviado ou não)
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/MessageResponse'
-              example:
-                message: Se este e-mail estiver cadastrado, enviaremos um código de verificação.
-        '500':
-          description: Erro interno do servidor
-
-  /riders/password/verify-code:
-    post:
-      tags: [Riders]
-      summary: Verificar código de recuperação de senha
-      description: |
-        Valida o código de reset (e se ainda não expirou).
-        Não invalida o código — isso só ocorre no reset da senha.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/PasswordVerifyCode'
-      responses:
-        '200':
-          description: Código válido
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/MessageResponse'
-              example:
-                message: Código verificado com sucesso.
-        '403':
-          description: Código inválido ou expirado
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                error: Código inválido ou expirado.
-        '500':
-          description: Erro interno do servidor
-
-  /riders/password/reset:
-    post:
-      tags: [Riders]
-      summary: Redefinir senha
-      description: |
-        Valida e-mail + código + expiração, atualiza a senha
-        e invalida `resetPasswordCode` / `resetPasswordCodeExpiresAt`.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/PasswordReset'
-      responses:
-        '200':
-          description: Senha redefinida com sucesso
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/MessageResponse'
-              example:
-                message: Senha redefinida com sucesso.
-        '403':
-          description: Código inválido ou expirado
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                error: Código inválido ou expirado.
-        '500':
-          description: Erro interno do servidor
-
-  # =====================
-  # ADMIN
-  # =====================
-  /admin/register:
-    post:
-      tags: [Admin]
-      summary: Cadastrar admin (registro inicial)
-      description: Cria a primeira conta de administrador. Em produção, considere restringir ou remover esta rota.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/AdminRegister'
+              $ref: '#/components/schemas/UserRegister'
       responses:
         '201':
           description: Conta criada com sucesso
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AdminRegisterResponse'
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Conta criada com sucesso.
+                  user:
+                    $ref: '#/components/schemas/User'
         '400':
-          description: Dados inválidos ou email já cadastrado
-        '500':
-          description: Erro interno do servidor
-
-  /admin/login:
-    post:
-      tags: [Admin]
-      summary: Login do admin
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/AdminLogin'
-      responses:
-        '200':
-          description: Login realizado — retorna token JWT
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AdminLoginResponse'
-        '400':
-          description: Email ou senha inválidos
-        '403':
-          description: Conta desativada
-        '500':
-          description: Erro interno do servidor
-
-  /admin/me:
-    get:
-      tags: [Admin]
-      summary: Dados do admin autenticado
-      security:
-        - bearerAuth: []
-      responses:
-        '200':
-          description: Dados do admin
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AdminProfile'
-        '401':
-          description: Não autorizado
-        '403':
-          description: Conta desativada
-        '404':
-          description: Usuário não encontrado
-        '500':
-          description: Erro interno do servidor
-
-  /admin/create:
-    post:
-      tags: [Admin]
-      summary: Criar novo admin (protegido)
-      description: Cria um novo administrador. Requer autenticação de um admin já existente.
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/AdminRegister'
-      responses:
-        '201':
-          description: Conta criada com sucesso
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AdminRegisterResponse'
-        '400':
-          description: Dados inválidos ou email já cadastrado
-        '401':
-          description: Não autorizado
-        '500':
-          description: Erro interno do servidor
-
-  /admin/riders/{id}/approve:
-    patch:
-      tags: [Admin]
-      summary: Aprovar conta de um rider
-      description: |
-        Define `accountApprovedAt` com a data/hora atual.
-        Exige que o rider já tenha enviado o documento (`documentImage`).
-        Só pode ser feito uma vez por rider.
-        Após a aprovação, um e-mail de congratulação pode ser enviado ao rider.
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: id
-          in: path
-          required: true
-          description: ID do rider (MongoDB ObjectId)
-          schema:
-            type: string
-            example: "665f1a2b3c4d5e6f7a8b9c0d"
-      responses:
-        '200':
-          description: Conta aprovada com sucesso
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RiderActionResponse'
-        '400':
-          description: Conta já aprovada ou documento ainda não enviado
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              examples:
-                alreadyApproved:
-                  value:
-                    error: Conta já aprovada.
-                noDocument:
-                  value:
-                    error: Documento ainda não enviado.
-        '401':
-          description: Não autorizado
-        '404':
-          description: Entregador não encontrado
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                error: Entregador não encontrado.
-        '500':
-          description: Erro interno do servidor
-
-  /admin/riders/{id}/active:
-    patch:
-      tags: [Admin]
-      summary: Ativar ou desativar conta de um rider
-      description: Altera o campo `active` do rider. Contas desativadas não conseguem fazer login.
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: id
-          in: path
-          required: true
-          description: ID do rider (MongoDB ObjectId)
-          schema:
-            type: string
-            example: "665f1a2b3c4d5e6f7a8b9c0d"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/SetRiderActive'
-      responses:
-        '200':
-          description: Status da conta alterado com sucesso
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RiderActionResponse'
-        '400':
-          description: Campo active inválido (deve ser boolean)
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                error: 'O campo "active" deve ser true ou false.'
-        '401':
-          description: Não autorizado
-        '404':
-          description: Entregador não encontrado
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                error: Entregador não encontrado.
-        '500':
-          description: Erro interno do servidor
-
-  /admin/stores/{id}/active:
-    patch:
-      tags: [Admin]
-      summary: Ativar ou desativar conta de uma loja
-      description: |
-        Altera o campo `active` da loja.
-        Contas desativadas não conseguem fazer login.
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: id
-          in: path
-          required: true
-          description: ID da loja (MongoDB ObjectId)
-          schema:
-            type: string
-            example: "6a7f613a9620c4bb4fc81f9f"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/SetStoreActive'
-      responses:
-        '200':
-          description: Status da conta alterado com sucesso
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/StoreActionResponse'
-              examples:
-                activated:
-                  value:
-                    message: Conta ativada com sucesso.
-                    store:
-                      _id: "6a7f613a9620c4bb4fc81f9f"
-                      name: Pizzaria do Centro
-                      email: contato@pizzaria.com
-                      active: true
-                deactivated:
-                  value:
-                    message: Conta desativada com sucesso.
-                    store:
-                      _id: "6a7f613a9620c4bb4fc81f9f"
-                      name: Pizzaria do Centro
-                      email: contato@pizzaria.com
-                      active: false
-        '400':
-          description: Campo active inválido (deve ser boolean)
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                error: 'O campo "active" deve ser true ou false.'
-        '401':
-          description: Não autorizado
-        '404':
-          description: Loja não encontrada
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                error: Loja não encontrada.
-        '500':
-          description: Erro interno do servidor
-
-  # =====================
-  # STORES
-  # =====================
-  /stores/register:
-    post:
-      tags: [Stores]
-      summary: Cadastrar loja
-      description: |
-        Cria a conta da loja e envia por e-mail o código de verificação.
-        Use `POST /stores/verify-account` (autenticado) para ativar o e-mail.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/StoreRegister'
-      responses:
-        '201':
-          description: Conta criada com sucesso
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/StoreRegisterResponse'
-        '400':
-          description: Dados inválidos ou email já cadastrado
+          description: Email já cadastrado
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
               example:
                 error: Email já cadastrado.
+        '422':
+          description: Dados inválidos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
         '500':
           description: Erro interno do servidor
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
-  /stores/login:
+  /auth/login:
     post:
-      tags: [Stores]
-      summary: Login da loja
+      tags: [Auth]
+      summary: Login
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/StoreLogin'
+              $ref: '#/components/schemas/UserLogin'
       responses:
         '200':
-          description: Login realizado — retorna token JWT
+          description: Login realizado — retorna dados do usuário e token JWT
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StoreLoginResponse'
+                $ref: '#/components/schemas/UserLoginResponse'
         '400':
           description: Email ou senha inválidos
           content:
@@ -787,326 +322,30 @@ paths:
                 $ref: '#/components/schemas/Error'
               example:
                 error: Conta desativada.
+        '422':
+          description: Dados inválidos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
         '500':
           description: Erro interno do servidor
 
-  /stores/me:
+  /auth/me:
     get:
-      tags: [Stores]
-      summary: Dados da loja autenticada
+      tags: [Auth]
+      summary: Dados do usuário autenticado
       security:
         - bearerAuth: []
       responses:
         '200':
-          description: Dados da loja
+          description: Dados do usuário
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StoreProfile'
+                $ref: '#/components/schemas/User'
         '401':
           description: Não autorizado
-        '403':
-          description: Conta desativada
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                error: Conta desativada.
-        '404':
-          description: Loja não encontrada
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                error: Loja não encontrada.
-        '500':
-          description: Erro interno do servidor
-
-    patch:
-      tags: [Stores]
-      summary: Atualizar perfil da loja
-      description: |
-        Atualiza `name`, `phone`, `doc` e/ou `address` da loja autenticada.
-        Envie apenas os campos que deseja alterar (todos opcionais).
-        Em `address`, o merge é parcial: só sobrescreve as chaves enviadas.
-        `address.state` deve ser a sigla da UF brasileira (ex: SP, RJ, MG).
-        Requer e-mail verificado (`emailVerifiedAt` preenchido) e conta ativa.
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/StoreUpdateProfile'
-            examples:
-              basic:
-                summary: Nome e telefone
-                value:
-                  name: Pizzaria do Centro
-                  phone: "11988887777"
-              withAddress:
-                summary: Com endereço completo
-                value:
-                  name: Pizzaria do Centro
-                  phone: "11988887777"
-                  doc: "12345678000199"
-                  address:
-                    street: Rua das Flores
-                    number: "100"
-                    complement: Loja 2
-                    district: Centro
-                    city: São Paulo
-                    state: SP
-                    zipCode: "01001000"
-                    latitude: -23.5505
-                    longitude: -46.6333
-      responses:
-        '200':
-          description: Perfil atualizado com sucesso
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/StoreProfile'
-        '401':
-          description: Não autorizado
-        '403':
-          description: Conta desativada
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                error: Conta desativada.
-        '404':
-          description: Loja não encontrada ou conta ainda não verificada
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              examples:
-                notFound:
-                  value:
-                    error: Loja não encontrada.
-                notVerified:
-                  value:
-                    error: Conta ainda não verificada.
-        '422':
-          description: Dados inválidos (validação)
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              examples:
-                invalidState:
-                  value:
-                    error: Estado inválido.
-        '500':
-          description: Erro interno do servidor
-
-  /stores/verify-account:
-    post:
-      tags: [Stores]
-      summary: Verificar conta da loja
-      description: |
-        Valida o código de verificação enviado por e-mail no cadastro da loja.
-        Define `emailVerifiedAt` com a data/hora atual e limpa `emailVerificationCode`.
-        Envia e-mail de confirmação após a verificação.
-        Requer autenticação (Bearer token JWT de store).
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/StoreVerifyAccount'
-      responses:
-        '200':
-          description: Conta verificada com sucesso — retorna o perfil da loja
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/StoreProfile'
-        '400':
-          description: Conta já verificada
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                error: Conta já verificada.
-        '401':
-          description: Não autorizado
-        '403':
-          description: Código de verificação inválido
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                error: Código de verificação inválido.
-        '422':
-          description: Dados inválidos (código obrigatório)
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-        '500':
-          description: Erro interno do servidor
-
-  /stores/password/verify-code:
-    post:
-      tags: [Stores]
-      summary: Verificar código de recuperação de senha da loja
-      description: |
-        Valida o código de reset de senha da loja (e se ainda não expirou).
-        Não invalida o código — isso só ocorre no reset da senha.
-        Não requer autenticação.
-        Body: `email` + `code` (mesmo formato do fluxo de riders).
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/PasswordVerifyCode'
-      responses:
-        '200':
-          description: Código válido
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/MessageResponse'
-              example:
-                message: Código verificado com sucesso.
-        '403':
-          description: Código inválido ou expirado (ou e-mail inexistente / conta desativada)
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                error: Código inválido ou expirado.
-        '500':
-          description: Erro interno do servidor
-
-  /stores/password/reset:
-    post:
-      tags: [Stores]
-      summary: Redefinir senha da loja
-      description: |
-        Valida e-mail + código + expiração, atualiza a senha da loja
-        e invalida `resetPasswordCode` / `resetPasswordCodeExpiresAt`.
-        Não requer autenticação.
-        Body: `email`, `code` e `password` (nova senha).
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/PasswordReset'
-      responses:
-        '200':
-          description: Senha redefinida com sucesso
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/MessageResponse'
-              example:
-                message: Senha redefinida com sucesso.
-        '403':
-          description: Código inválido ou expirado (ou e-mail inexistente / conta desativada)
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                error: Código inválido ou expirado.
-        '422':
-          description: Dados inválidos (validação — e-mail, código ou senha)
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-        '500':
-          description: Erro interno do servidor
-
-  # =====================
-  # DELIVERIES
-  # =====================
-  /stores/deliveries:
-    post:
-      tags: [Deliveries, Stores]
-      summary: Criar entrega (loja)
-      description: |
-        Cria uma nova entrega para a loja autenticada.
-        O rider ainda não é atribuído (`rider: null`, `status: 0` = disponível).
-
-        Requisitos da loja:
-        - Conta ativa
-        - E-mail verificado (`emailVerifiedAt`)
-        - Endereço completo com `latitude` e `longitude` cadastrados
-
-        O destino deve vir com coordenadas (ex.: Google Places no front).
-        A API calcula a distância (km) entre origem (loja) e destino via Google Distance Matrix
-        e define um `riderPayout` preliminar.
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CreateDeliveryRequest'
-            example:
-              destino:
-                nome: Maria Souza
-                telefone: "(35) 98765-4321"
-                address: "Rua Altino Rosa, 123, Horizonte Azul, Brazópolis - MG"
-                latitude: -22.4735
-                longitude: -45.6168
-              package:
-                description: "2 lanches + refrigerante"
-                category: Comida
-                quantity: 2
-                weight: 1.2
-                declaredvalue: 45.90
-                notes: "Entregar no portão dos fundos"
-                payment: Dinheiro
-                amountDue: 36
-                cashChange: 4.10
-      responses:
-        '201':
-          description: Entrega criada
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Delivery'
-        '400':
-          description: |
-            Dados inválidos (validação) ou loja sem endereço/localização cadastrados.
-          content:
-            application/json:
-              schema:
-                oneOf:
-                  - $ref: '#/components/schemas/ValidationError'
-                  - $ref: '#/components/schemas/Error'
-              examples:
-                validacao:
-                  summary: Validação
-                  value:
-                    error: Dados inválidos
-                    details:
-                      - field: destino.nome
-                        message: Nome do destinatário é obrigatório
-                enderecoLoja:
-                  summary: Loja sem localização
-                  value:
-                    error: Cadastre o endereço completo da loja (com localização) antes de criar uma entrega.
-        '401':
-          description: Não autorizado (token ausente ou inválido)
           content:
             application/json:
               schema:
@@ -1114,843 +353,364 @@ paths:
               example:
                 error: Não autorizado
         '403':
-          description: Conta desativada ou e-mail ainda não verificado
+          description: Conta desativada
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
-              examples:
-                desativada:
-                  value:
-                    error: Conta desativada.
-                naoVerificada:
-                  value:
-                    error: Conta ainda não verificada.
+              example:
+                error: Conta desativada.
         '404':
-          description: Loja não encontrada
+          description: Usuário não encontrado
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
               example:
-                error: Loja não encontrada.
-        '422':
-          description: Não foi possível calcular a distância para o endereço informado
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                error: Não foi possível calcular a distância para o endereço informado. Verifique o endereço e tente novamente.
+                error: Usuário não encontrado.
         '500':
           description: Erro interno do servidor
 
-  /riders/deliveries/available:
+  # =====================
+  # CATEGORIES
+  # =====================
+  /categories:
     get:
-      tags: [Deliveries, Riders]
-      summary: Listar entregas disponíveis (rider)
-      description: |
-        Retorna até 50 entregas com `status: 0` (disponível) e sem rider atribuído,
-        ordenadas da mais recente para a mais antiga.
-        Inclui dados da loja (`name`, `avatar`, `address.district`) via populate.
+      tags: [Categories]
+      summary: Listar categorias do usuário
+      description: Retorna apenas `_id` e `name`, ordenadas por nome (A–Z).
       security:
         - bearerAuth: []
       responses:
         '200':
-          description: Lista de entregas disponíveis
+          description: Lista de categorias
           content:
             application/json:
               schema:
                 type: array
                 items:
-                  $ref: '#/components/schemas/Delivery'
+                  $ref: '#/components/schemas/CategoryListItem'
         '401':
-          description: Não autorizado (token de rider ausente ou inválido)
+          description: Não autorizado
+        '403':
+          description: Conta desativada
+        '404':
+          description: Usuário não encontrado
+        '500':
+          description: Erro interno do servidor
+
+    post:
+      tags: [Categories]
+      summary: Criar categoria
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CategoryInput'
+      responses:
+        '201':
+          description: Categoria criada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Category'
+        '401':
+          description: Não autorizado
+        '403':
+          description: Conta desativada
+        '404':
+          description: Usuário não encontrado
+        '422':
+          description: Nome obrigatório
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+        '500':
+          description: Erro interno do servidor
+
+  /categories/{id}:
+    put:
+      tags: [Categories]
+      summary: Atualizar nome da categoria
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: ObjectId da categoria
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CategoryInput'
+      responses:
+        '200':
+          description: Categoria atualizada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Category'
+        '401':
+          description: Não autorizado
+        '403':
+          description: Conta desativada ou sem permissão
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                inactive:
+                  value:
+                    error: Conta desativada.
+                forbidden:
+                  value:
+                    error: Você não tem permissão para editar esta categoria.
+        '404':
+          description: Categoria ou usuário não encontrado
+        '422':
+          description: Nome obrigatório
+        '500':
+          description: Erro interno do servidor
+
+    delete:
+      tags: [Categories]
+      summary: Excluir categoria
+      description: |
+        Remove a categoria se ela **não** tiver tarefas vinculadas.
+        Se existirem todos na categoria, retorna **409** e não exclui nada.
+        Não há exclusão em cascata.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: ObjectId da categoria
+      responses:
+        '204':
+          description: Categoria excluída (sem body)
+        '401':
+          description: Não autorizado
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
               example:
                 error: Não autorizado
+        '403':
+          description: Conta desativada ou sem permissão
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                inactive:
+                  value:
+                    error: Conta desativada.
+                forbidden:
+                  value:
+                    error: Você não tem permissão para excluir esta categoria.
+        '404':
+          description: Categoria ou usuário não encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Categoria não encontrada.
+        '409':
+          description: Categoria possui tarefas — exclusão bloqueada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Categoria possui tarefas. Remova ou mova as tarefas antes de excluir.
+        '500':
+          description: Erro interno do servidor
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # =====================
+  # TODOS
+  # =====================
+  /todos:
+    post:
+      tags: [Todos]
+      summary: Criar todo
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TodoCreate'
+      responses:
+        '201':
+          description: Todo criado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Todo'
+        '401':
+          description: Não autorizado
+        '403':
+          description: Conta desativada
+        '404':
+          description: Usuário ou categoria não encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                category:
+                  value:
+                    error: Categoria não encontrada.
+        '422':
+          description: Dados inválidos (descrição, prioridade ou categoryId)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
         '500':
           description: Erro interno do servidor
 
+  /todos/category/{categoryId}:
+    get:
+      tags: [Todos]
+      summary: Listar todos de uma categoria
+      description: |
+        Retorna apenas os todos do usuário autenticado na categoria informada,
+        ordenados por `createdAt` decrescente.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: categoryId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: ObjectId da categoria
+      responses:
+        '200':
+          description: Lista de todos
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Todo'
+        '401':
+          description: Não autorizado
+        '403':
+          description: Conta desativada
+        '404':
+          description: Categoria ou usuário não encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Categoria não encontrada.
+        '500':
+          description: Erro interno do servidor
 
-components:
-  securitySchemes:
-    bearerAuth:
-      type: http
-      scheme: bearer
-      bearerFormat: JWT
+  /todos/{id}:
+    patch:
+      tags: [Todos]
+      summary: Atualizar todo (parcial)
+      description: |
+        Atualiza apenas os campos enviados: `description`, `done`, `priority` e/ou `categoryId`.
+        Se `categoryId` for informado, a categoria deve existir e pertencer ao usuário.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: ObjectId do todo
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TodoUpdate'
+      responses:
+        '200':
+          description: Todo atualizado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Todo'
+        '401':
+          description: Não autorizado
+        '403':
+          description: Conta desativada, todo de outro usuário ou categoria de outro usuário
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                todo:
+                  value:
+                    error: Você não tem permissão para editar este todo.
+                category:
+                  value:
+                    error: Você não tem permissão para usar esta categoria.
+        '404':
+          description: Todo, categoria ou usuário não encontrado
+        '422':
+          description: Dados inválidos
+        '500':
+          description: Erro interno do servidor
 
-  schemas:
-    # ----- Rider -----
-    RiderRegister:
-      type: object
-      required: [name, email, password, phone]
-      properties:
-        name:
-          type: string
-          example: João Entregador
-        email:
-          type: string
-          format: email
-          example: joao@email.com
-        password:
-          type: string
-          minLength: 3
-          example: "123456"
-        phone:
-          type: string
-          example: "11999999999"
-        vehicleType:
-          type: string
-          enum: [Carro, Moto, Bicicleta]
-          example: Moto
-        doc:
-          type: string
-          example: "12345678900"
-
-    RiderLogin:
-      type: object
-      required: [email, password]
-      properties:
-        email:
-          type: string
-          format: email
-          example: joao@email.com
-        password:
-          type: string
-          example: "123456"
-
-    RiderUpdateProfile:
-      type: object
-      description: Envie apenas os campos que deseja alterar
-      properties:
-        name:
-          type: string
-          minLength: 2
-          example: João Entregador
-        phone:
-          type: string
-          example: "11999998888"
-        doc:
-          type: string
-          nullable: true
-          example: "12345678900"
-
-    RiderUpdateVehicle:
-      type: object
-      required: [vehicleType]
-      properties:
-        vehicleType:
-          type: string
-          enum: [Carro, Moto, Bicicleta]
-          description: Tipo do veículo (salvo em vehicle.type)
-          example: Moto
-        model:
-          type: string
-          nullable: true
-          example: Honda CG 160
-        color:
-          type: string
-          nullable: true
-          example: Vermelha
-        plate:
-          type: string
-          nullable: true
-          description: Placa (ignorada/limpa se tipo for Bicicleta)
-          example: ABC1D23
-
-    RiderVerifyAccount:
-      type: object
-      required: [code]
-      properties:
-        code:
-          type: string
-          description: Código de 4 dígitos enviado por e-mail
-          example: "5048"
-          minLength: 4
-          maxLength: 4
-
-    PasswordRequest:
-      type: object
-      required: [email]
-      properties:
-        email:
-          type: string
-          format: email
-          example: joao@email.com
-
-    PasswordVerifyCode:
-      type: object
-      required: [email, code]
-      properties:
-        email:
-          type: string
-          format: email
-          example: joao@email.com
-        code:
-          type: string
-          description: Código de recuperação enviado por e-mail
-          example: "5048"
-          minLength: 4
-          maxLength: 4
-
-    PasswordReset:
-      type: object
-      required: [email, code, password]
-      properties:
-        email:
-          type: string
-          format: email
-          example: joao@email.com
-        code:
-          type: string
-          description: Código de recuperação enviado por e-mail
-          example: "5048"
-          minLength: 4
-          maxLength: 4
-        password:
-          type: string
-          minLength: 3
-          description: Nova senha
-          example: "novaSenha123"
-
-    RiderProfile:
-      type: object
-      properties:
-        _id:
-          type: string
-          example: "665f1a2b3c4d5e6f7a8b9c0d"
-        name:
-          type: string
-          example: João Entregador
-        email:
-          type: string
-          format: email
-          example: joao@email.com
-        phone:
-          type: string
-          example: "11999999999"
-        avatar:
-          type: string
-          nullable: true
-          description: URL pública do avatar (Cloudinary)
-          example: "https://res.cloudinary.com/demo/image/upload/v1/delivroo/riders/rider_665f1a2b.jpg"
-        documentImage:
-          type: string
-          nullable: true
-          description: URL da foto do documento (CNH/RG)
-          example: "https://res.cloudinary.com/demo/image/upload/v1/delivroo/riders/rider_665f1a2b.jpg"
-        doc:
-          type: string
-          nullable: true
-          example: "12345678900"
-        active:
-          type: boolean
-          example: true
-        emailVerifiedAt:
-          type: string
-          format: date-time
-          nullable: true
-          example: "2026-08-02T20:15:00.000Z"
-        accountApprovedAt:
-          type: string
-          format: date-time
-          nullable: true
-          example: "2026-07-29T20:15:00.000Z"
-        vehicle:
-          type: object
-          properties:
-            type:
-              type: string
-              enum: [Carro, Moto, Bicicleta]
-              example: Moto
-            model:
-              type: string
-              nullable: true
-            color:
-              type: string
-              nullable: true
-            plate:
-              type: string
-              nullable: true
-        rating:
-          type: number
-          example: 5
-        online:
-          type: boolean
-          example: false
-
-    AvatarUploadResponse:
-      type: object
-      properties:
-        message:
-          type: string
-          example: Avatar atualizado com sucesso.
-        avatar:
-          type: string
-          description: URL pública do avatar no Cloudinary
-          example: "https://res.cloudinary.com/demo/image/upload/v1/delivroo/riders/rider_665f1a2b.jpg"
-
-    DocumentUploadResponse:
-      type: object
-      properties:
-        message:
-          type: string
-          example: Documento atualizado com sucesso.
-        documentImage:
-          type: string
-          description: URL pública do documento no Cloudinary
-          example: "https://res.cloudinary.com/demo/image/upload/v1/delivroo/riders/rider_665f1a2b.jpg"
-
-    RiderActionResponse:
-      type: object
-      properties:
-        message:
-          type: string
-          example: Conta aprovada com sucesso.
-        rider:
-          $ref: '#/components/schemas/RiderProfile'
-
-    SetRiderActive:
-      type: object
-      required: [active]
-      properties:
-        active:
-          type: boolean
-          description: true = ativar | false = desativar
-          example: false
-
-    SetStoreActive:
-      type: object
-      required: [active]
-      properties:
-        active:
-          type: boolean
-          description: true = ativar | false = desativar
-          example: false
-
-    StoreActionResponse:
-      type: object
-      properties:
-        message:
-          type: string
-          example: Conta ativada com sucesso.
-        store:
-          $ref: '#/components/schemas/StoreProfile'
-
-    # ----- Admin -----
-    AdminRegister:
-      type: object
-      required: [name, email, password]
-      properties:
-        name:
-          type: string
-          example: Maria Admin
-        email:
-          type: string
-          format: email
-          example: maria@admin.com
-        password:
-          type: string
-          minLength: 3
-          example: "123456"
-
-    AdminLogin:
-      type: object
-      required: [email, password]
-      properties:
-        email:
-          type: string
-          format: email
-          example: maria@admin.com
-        password:
-          type: string
-          example: "123456"
-
-    AdminRegisterResponse:
-      type: object
-      properties:
-        message:
-          type: string
-          example: Conta criada com sucesso.
-        admin:
-          $ref: '#/components/schemas/AdminProfile'
-
-    AdminLoginResponse:
-      type: object
-      properties:
-        _id:
-          type: string
-          example: "665f1a2b3c4d5e6f7a8b9c0d"
-        name:
-          type: string
-          example: Maria Admin
-        email:
-          type: string
-          format: email
-          example: maria@admin.com
-        active:
-          type: boolean
-          example: true
-        token:
-          type: string
-          description: JWT para autenticação nas rotas protegidas
-          example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
-
-    AdminProfile:
-      type: object
-      properties:
-        _id:
-          type: string
-          example: "665f1a2b3c4d5e6f7a8b9c0d"
-        name:
-          type: string
-          example: Maria Admin
-        email:
-          type: string
-          format: email
-          example: maria@admin.com
-        active:
-          type: boolean
-          example: true
-
-    # ----- Store -----
-    StoreRegister:
-      type: object
-      required: [name, email, password, phone]
-      properties:
-        name:
-          type: string
-          example: Pizzaria do Centro
-        email:
-          type: string
-          format: email
-          example: contato@pizzaria.com
-        password:
-          type: string
-          minLength: 3
-          example: "123456"
-        phone:
-          type: string
-          example: "11988887777"
-
-    StoreLogin:
-      type: object
-      required: [email, password]
-      properties:
-        email:
-          type: string
-          format: email
-          example: contato@pizzaria.com
-        password:
-          type: string
-          example: "123456"
-
-    StoreVerifyAccount:
-      type: object
-      required: [code]
-      properties:
-        code:
-          type: string
-          description: Código de verificação enviado por e-mail no cadastro
-          example: "5048"
-          minLength: 4
-          maxLength: 4
-
-    StoreUpdateProfile:
-      type: object
-      description: Envie apenas os campos que deseja alterar
-      properties:
-        name:
-          type: string
-          minLength: 3
-          example: Pizzaria do Centro
-        phone:
-          type: string
-          example: "11988887777"
-        doc:
-          type: string
-          nullable: true
-          description: CNPJ ou documento da loja
-          example: "12345678000199"
-        address:
-          $ref: '#/components/schemas/StoreAddress'
-
-    StoreAddress:
-      type: object
-      description: Endereço da loja (merge parcial na atualização)
-      properties:
-        street:
-          type: string
-          nullable: true
-          example: Rua das Flores
-        number:
-          type: string
-          nullable: true
-          example: "100"
-        complement:
-          type: string
-          nullable: true
-          example: Loja 2
-        district:
-          type: string
-          nullable: true
-          example: Centro
-        city:
-          type: string
-          nullable: true
-          example: São Paulo
-        state:
-          type: string
-          nullable: true
-          description: Sigla da UF brasileira (2 letras)
-          enum: [AC, AL, AP, AM, BA, CE, DF, ES, GO, MA, MT, MS, MG, PA, PB, PR, PE, PI, RJ, RN, RS, RO, RR, SC, SP, SE, TO]
-          example: SP
-        zipCode:
-          type: string
-          nullable: true
-          example: "01001000"
-        latitude:
-          type: number
-          format: float
-          nullable: true
-          example: -23.5505
-        longitude:
-          type: number
-          format: float
-          nullable: true
-          example: -46.6333
-
-    StoreProfile:
-      type: object
-      properties:
-        _id:
-          type: string
-          example: "665f1a2b3c4d5e6f7a8b9c0d"
-        name:
-          type: string
-          example: Pizzaria do Centro
-        email:
-          type: string
-          format: email
-          example: contato@pizzaria.com
-        phone:
-          type: string
-          example: "11988887777"
-        avatar:
-          type: string
-          nullable: true
-          example: null
-        doc:
-          type: string
-          nullable: true
-          example: "12345678000199"
-        active:
-          type: boolean
-          example: true
-        emailVerifiedAt:
-          type: string
-          format: date-time
-          nullable: true
-          description: Data/hora em que o e-mail foi verificado (null se ainda não verificado)
-          example: "2026-08-02T20:15:00.000Z"
-        address:
-          $ref: '#/components/schemas/StoreAddress'
-
-    StoreRegisterResponse:
-      type: object
-      properties:
-        message:
-          type: string
-          example: Conta criada com sucesso.
-        store:
-          $ref: '#/components/schemas/StoreProfile'
-
-    StoreLoginResponse:
-      type: object
-      properties:
-        _id:
-          type: string
-          example: "665f1a2b3c4d5e6f7a8b9c0d"
-        name:
-          type: string
-          example: Pizzaria do Centro
-        email:
-          type: string
-          format: email
-          example: contato@pizzaria.com
-        phone:
-          type: string
-          example: "11988887777"
-        avatar:
-          type: string
-          nullable: true
-        doc:
-          type: string
-          nullable: true
-        active:
-          type: boolean
-          example: true
-        token:
-          type: string
-          description: JWT para autenticação nas rotas protegidas de store
-          example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
-
-
-    # ----- Delivery -----
-    CreateDeliveryRequest:
-      type: object
-      required: [destino, package]
-      properties:
-        destino:
-          $ref: '#/components/schemas/DeliveryDestinoInput'
-        package:
-          $ref: '#/components/schemas/DeliveryPackageInput'
-
-    DeliveryDestinoInput:
-      type: object
-      required: [nome, telefone, address, latitude, longitude]
-      properties:
-        nome:
-          type: string
-          example: Maria Souza
-        telefone:
-          type: string
-          example: "(35) 98765-4321"
-        address:
-          type: string
-          minLength: 8
-          description: Endereço completo (rua, número, bairro, cidade)
-          example: "Rua Altino Rosa, 123, Horizonte Azul, Brazópolis - MG"
-        latitude:
-          type: number
-          format: float
-          minimum: -90
-          maximum: 90
-          description: Obrigatória; não pode ser 0
-          example: -22.4735
-        longitude:
-          type: number
-          format: float
-          minimum: -180
-          maximum: 180
-          description: Obrigatória; não pode ser 0
-          example: -45.6168
-
-    DeliveryPackageInput:
-      type: object
-      required: [description]
-      properties:
-        description:
-          type: string
-          example: "2 lanches + refrigerante"
-        category:
-          type: string
-          enum: [Comida, Documentos, Pacote, Medicamentos, Peças, Outros]
-          example: Comida
-        quantity:
-          type: integer
-          minimum: 1
-          example: 2
-        weight:
-          type: number
-          format: float
-          minimum: 0
-          nullable: true
-          description: Peso em kg
-          example: 1.2
-        declaredvalue:
-          type: number
-          format: float
-          minimum: 0
-          nullable: true
-          example: 45.90
-        notes:
-          type: string
-          nullable: true
-          example: "Entregar no portão dos fundos"
-        payment:
-          type: string
-          enum: [Dinheiro, Cartão Crédito, Cartão Débito, Pago, Nada a Pagar]
-          example: Dinheiro
-        amountDue:
-          type: number
-          format: float
-          minimum: 0
-          nullable: true
-          description: Valor a receber do cliente
-          example: 36
-        cashChange:
-          type: number
-          format: float
-          minimum: 0
-          nullable: true
-          description: Troco
-          example: 4.10
-
-    DeliveryLocation:
-      type: object
-      properties:
-        address:
-          type: string
-          example: "Rua das Flores, 100, Centro, Brazópolis - MG"
-        latitude:
-          type: number
-          format: float
-          example: -22.4701
-        longitude:
-          type: number
-          format: float
-          example: -45.6102
-        nome:
-          type: string
-          description: Presente no destino
-          example: Maria Souza
-        telefone:
-          type: string
-          description: Presente no destino
-          example: "(35) 98765-4321"
-
-    DeliveryEvent:
-      type: object
-      properties:
-        data:
-          type: string
-          format: date-time
-        descricao:
-          type: string
-          example: Entrega criada pela loja
-        _id:
-          type: string
-
-    DeliveryStoreSummary:
-      type: object
-      description: Loja populada na listagem de disponíveis (campos parciais)
-      properties:
-        _id:
-          type: string
-        name:
-          type: string
-          example: Pizzaria do Centro
-        avatar:
-          type: string
-          nullable: true
-        address:
-          type: object
-          properties:
-            district:
-              type: string
-              example: Centro
-
-    Delivery:
-      type: object
-      properties:
-        _id:
-          type: string
-          example: "665f1a2b3c4d5e6f7a8b9c0d"
-        data:
-          type: string
-          format: date-time
-        store:
-          description: ObjectId da loja ou objeto populado (listagem available)
-          oneOf:
-            - type: string
-            - $ref: '#/components/schemas/DeliveryStoreSummary'
-        rider:
-          type: string
-          nullable: true
-          description: ObjectId do rider (null enquanto disponível)
-          example: null
-        origem:
-          $ref: '#/components/schemas/DeliveryLocation'
-        destino:
-          $ref: '#/components/schemas/DeliveryLocation'
-        distancia:
-          type: number
-          format: float
-          description: Distância em quilômetros (2 casas decimais)
-          example: 3.45
-        status:
-          type: integer
-          description: |
-            0 = disponível (sem rider).
-            Outros valores reservados para fluxo futuro (aceita, em rota, concluída, etc.).
-          example: 0
-        riderRating:
-          type: number
-          nullable: true
-          example: null
-        riderPayout:
-          type: number
-          format: float
-          description: Valor estimado a pagar ao entregador
-          example: 12.5
-        package:
-          type: object
-          properties:
-            description:
-              type: string
-            category:
-              type: string
-            quantity:
-              type: integer
-            weight:
-              type: number
-              nullable: true
-            declaredvalue:
-              type: number
-            notes:
-              type: string
-              nullable: true
-            payment:
-              type: string
-            amountDue:
-              type: number
-            cashChange:
-              type: number
-        events:
-          type: array
-          items:
-            $ref: '#/components/schemas/DeliveryEvent'
-        createdAt:
-          type: string
-          format: date-time
-        updatedAt:
-          type: string
-          format: date-time
-
-    ValidationError:
-      type: object
-      properties:
-        error:
-          type: string
-          example: Dados inválidos
-        details:
-          type: array
-          items:
-            type: object
-            properties:
-              field:
-                type: string
-                example: destino.nome
-              message:
-                type: string
-                example: Nome do destinatário é obrigatório
-
-    # ----- Common -----
-    MessageResponse:
-      type: object
-      properties:
-        message:
-          type: string
-          example: Operação realizada com sucesso.
-
-    Error:
-      type: object
-      properties:
-        error:
-          type: string
-          example: Entregador não encontrado.
+    delete:
+      tags: [Todos]
+      summary: Excluir todo
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: ObjectId do todo
+      responses:
+        '204':
+          description: Todo excluído (sem body)
+        '401':
+          description: Não autorizado
+        '403':
+          description: Conta desativada ou sem permissão
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Você não tem permissão para excluir este todo.
+        '404':
+          description: Todo ou usuário não encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Todo não encontrado.
+        '500':
+          description: Erro interno do servidor

@@ -11,6 +11,7 @@ const router = Router();
 router.get('/', Auth,CategoryController.getCategories);
 router.post('/', Auth, categoryValidator,validate, CategoryController.createCategory);
 router.put('/:id', Auth,categoryValidator,validate, CategoryController.updateCategory);
+router.delete('/:id', Auth, CategoryController.deleteCategory);
 
 
 export default router;
