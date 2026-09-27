@@ -1,6 +1,7 @@
 import Category from '../models/category.js';
 import User from '../models/user.js';
 import Todo from '../models/todo.js';
+import mongoose from 'mongoose';
 
 export const createCategory = async (req, res) => {
   try {
@@ -48,13 +49,47 @@ export const getCategories = async (req, res) => {
       return res.status(403).json({ error: 'Conta desativada.' });
     }
 
-    const categories = await Category.find({ user: userId }).select('name').sort({ name: 1 });
+    const userObjectId = new mongoose.Types.ObjectId(userId);
+
+    const categories = await Category.aggregate([
+      { $match: { user: userObjectId } },
+      {
+        $lookup: {
+          from: 'todos',
+          let: { categoryId: '$_id' },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ['$category', '$$categoryId'] },
+                    { $eq: ['$user', userObjectId] },
+                    { $eq: ['$done', false] },
+                  ],
+                },
+              },
+            },
+          ],
+          as: 'pendingTodos',
+        },
+      },
+      {
+        $addFields: {
+          pendingCount: { $size: '$pendingTodos' },
+        },
+      },
+      {
+        $project: {
+          name: 1,
+          pendingCount: 1,
+        },
+      },
+      { $sort: { name: 1 } },
+    ]);
 
     return res.status(200).json(categories);
-
-
   } catch (error) {
-    console.error('Erro no validateToken:', error);
+    console.error('Erro no getCategories:', error);
     return res.status(500).json({ error: 'Erro interno do servidor.' });
   }
 };
