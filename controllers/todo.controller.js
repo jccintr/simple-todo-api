@@ -1,6 +1,7 @@
 import Todo from '../models/todo.js';
 import User from '../models/user.js';
 import Category from '../models/category.js';
+import mongoose from 'mongoose';
 
 export const createTodo = async (req, res) => {
   try {
@@ -58,17 +59,56 @@ export const getAllByCategory = async (req, res) => {
     const { categoryId } = req.params;
 
     const category = await Category.findById(categoryId);
-   
+
     if (!category) {
       return res.status(404).json({ error: 'Categoria não encontrada.' });
     }
 
-   const todos = await Todo.find({ user: userId, category: categoryId }).sort({ createdAt: -1 });
+    const userObjectId = new mongoose.Types.ObjectId(userId);
+    const categoryObjectId = new mongoose.Types.ObjectId(categoryId);
+
+    const todos = await Todo.aggregate([
+      {
+        $match: {
+          user: userObjectId,
+          category: categoryObjectId,
+        },
+      },
+      {
+        $addFields: {
+          // pendentes (done=false) primeiro
+          doneScore: { $cond: [{ $eq: ['$done', false] }, 0, 1] },
+          // high → medium → low
+          priorityScore: {
+            $switch: {
+              branches: [
+                { case: { $eq: ['$priority', 'high'] }, then: 0 },
+                { case: { $eq: ['$priority', 'medium'] }, then: 1 },
+                { case: { $eq: ['$priority', 'low'] }, then: 2 },
+              ],
+              default: 3,
+            },
+          },
+        },
+      },
+      {
+        $sort: {
+          doneScore: 1,
+          priorityScore: 1,
+          description: 1, // "name" do todo
+        },
+      },
+      {
+        $project: {
+          doneScore: 0,
+          priorityScore: 0,
+        },
+      },
+    ]);
 
     return res.status(200).json(todos);
-
   } catch (error) {
-    console.error('Erro no validateToken:', error);
+    console.error('Erro no getAllByCategory:', error);
     return res.status(500).json({ error: 'Erro interno do servidor.' });
   }
 };
